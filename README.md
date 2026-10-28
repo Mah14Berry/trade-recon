@@ -1,5 +1,9 @@
 # Trade Reconciliation Tool
 
+![CI](https://github.com/Mah14Berry/trade-recon/actions/workflows/ci.yml/badge.svg)
+
+![Dashboard](docs/dashboard.png)
+
 Matches an internal trade ledger against a custodian statement, classifies every break, and explains each one in plain English with a suggested next step.
 
 The matching is deterministic Python. The LLM only writes the explanation text for breaks the matcher has already found. It cannot create, remove or reclassify a break.
