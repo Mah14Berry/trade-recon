@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade reconciliation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #F2F4F6;
+  --surface: #FFFFFF;
+  --ink: #1B2430;
+  --muted: #5A6676;
+  --rule: #CBD3DB;
+  --accent: #1F4E79;
+  --highlight: #FBE9B7;
+  --error: #B3261E;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+.lede { margin: 0 0 28px; color: var(--muted); max-width: 62ch; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 16px; align-items: end; }
+label { display: block; font-weight: 500; margin-bottom: 6px; }
+input[type="file"] { width: 100%; font: inherit; color: var(--muted); }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+button, .button {
+  font: inherit;
+  font-weight: 500;
+  padding: 9px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+button.secondary, .button.secondary { background: var(--surface); color: var(--accent); }
+button:disabled { opacity: 0.55; cursor: progress; }
+:focus-visible { outline: 3px solid #7FB0E0; outline-offset: 2px; }
+.status { min-height: 22px; margin: 12px 0 0; color: var(--muted); }
+.status.error { color: var(--error); font-weight: 500; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; margin: 0; }
+.stats div { padding: 4px 20px 4px 0; }
+.stats dt { color: var(--muted); font-size: 13px; }
+.stats dd { margin: 0; font-family: var(--mono); font-size: 26px; font-weight: 500; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar label { display: inline; margin-right: 8px; }
+select { font: inherit; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 960px; }
+th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 8px 12px; border-bottom: 2px solid var(--rule); }
+td { padding: 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+td.mono, .mono { font-family: var(--mono); font-size: 13px; }
+td.absent { color: var(--muted); font-family: var(--sans); font-style: italic; }
+.line { white-space: nowrap; }
+.diff { background: var(--highlight); font-weight: 500; padding: 0 3px; border-radius: 2px; }
+.badge { display: inline-block; font-size: 13px; font-weight: 500; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--tone, var(--muted)); color: var(--tone, var(--muted)); white-space: nowrap; }
+.badge[data-type="MISSING_IN_CUSTODIAN"], .badge[data-type="MISSING_IN_LEDGER"] { --tone: #B3261E; }
+.badge[data-type="QUANTITY_MISMATCH"] { --tone: #8A5200; }
+.badge[data-type="PRICE_MISMATCH"] { --tone: #1F5FA8; }
+.badge[data-type="DATE_MISMATCH"] { --tone: #5B3FA0; }
+.badge[data-type="TICKER_MISMATCH"] { --tone: #1B7A5A; }
+.badge[data-type="MULTIPLE"] { --tone: #3D4752; }
+.source { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.empty { padding: 28px 4px; color: var(--muted); }
+.hidden { display: none; }
+@media (max-width: 760px) {
+  form { grid-template-columns: 1fr; }
+  main { padding: 20px 14px 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Trade reconciliation</h1>
+  <p class="lede">Compare an internal ledger against a custodian statement. Matching is done by code, and each break gets a plain-English explanation and a suggested next step.</p>
+
+  <section class="panel" aria-labelledby="inputs-heading">
+    <h2 id="inputs-heading" class="hidden">Inputs</h2>
+    <form id="upload-form">
+      <div>
+        <label for="ledger">Ledger file (CSV)</label>
+        <input id="ledger" name="ledger" type="file" accept=".csv,text/csv" required>
+      </div>
+      <div>
+        <label for="custodian">Custodian file (CSV)</label>
+        <input id="custodian" name="custodian" type="file" accept=".csv,text/csv" required>
+      </div>
+      <div class="actions">
+        <button type="submit" id="run-button">Reconcile files</button>
+        <button type="button" id="demo-button" class="secondary">Use sample data</button>
+      </div>
+    </form>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section id="results" class="hidden" aria-labelledby="results-heading">
+    <h2 id="results-heading" class="hidden">Results</h2>
+    <div class="panel">
+      <dl class="stats">
+        <div><dt>Ledger trades</dt><dd id="stat-ledger">0</dd></div>
+        <div><dt>Custodian trades</dt><dd id="stat-custodian">0</dd></div>
+        <div><dt>Matched</dt><dd id="stat-matched">0</dd></div>
+        <div><dt>Breaks</dt><dd id="stat-breaks">0</dd></div>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <div class="toolbar">
+        <div>
+          <label for="filter">Show</label>
+          <select id="filter"></select>
+        </div>
+        <a id="export-link" class="button secondary" href="#">Download CSV report</a>
+      </div>
+      <div id="empty" class="empty hidden"></div>
+      <div class="table-wrap">
+        <table id="breaks-table">
+          <thead>
+            <tr>
+              <th scope="col">Trade</th>
+              <th scope="col">Break</th>
+              <th scope="col">Ledger</th>
+              <th scope="col">Custodian</th>
+              <th scope="col">What happened</th>
+              <th scope="col">Next step</th>
+            </tr>
+          </thead>
+          <tbody id="breaks-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const TYPE_LABELS = {
+  MISSING_IN_CUSTODIAN: "Missing at custodian",
+  MISSING_IN_LEDGER: "Missing in ledger",
+  QUANTITY_MISMATCH: "Quantity",
+  PRICE_MISMATCH: "Price",
+  DATE_MISMATCH: "Date",
+  TICKER_MISMATCH: "Security",
+  MULTIPLE: "Several fields"
+};
+
+const form = document.getElementById("upload-form");
+const runButton = document.getElementById("run-button");
+const demoButton = document.getElementById("demo-button");
+const statusLine = document.getElementById("status");
+const results = document.getElementById("results");
+const filter = document.getElementById("filter");
+const body = document.getElementById("breaks-body");
+const empty = document.getElementById("empty");
+const exportLink = document.getElementById("export-link");
+const tableWrap = document.querySelector(".table-wrap");
+
+let currentRun = null;
+
+function setStatus(message, isError) {
+  statusLine.textContent = message;
+  statusLine.classList.toggle("error", Boolean(isError));
+}
+
+function setBusy(busy) {
+  runButton.disabled = busy;
+  demoButton.disabled = busy;
+  if (busy) setStatus("Reconciling and writing explanations...", false);
+}
+
+async function submitRun(send) {
+  setBusy(true);
+  try {
+    const response = await send();
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = typeof payload.detail === "string" ? payload.detail : "Something went wrong. Check both files and try again.";
+      throw new Error(detail);
+    }
+    render(payload);
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitRun(() => fetch("/api/reconcile", { method: "POST", body: new FormData(form) }));
+});
+
+demoButton.addEventListener("click", () => {
+  submitRun(() => fetch("/api/demo", { method: "POST" }));
+});
+
+filter.addEventListener("change", renderRows);
+
+function render(run) {
+  currentRun = run;
+  const summary = run.summary;
+  document.getElementById("stat-ledger").textContent = summary.ledger_count.toLocaleString();
+  document.getElementById("stat-custodian").textContent = summary.custodian_count.toLocaleString();
+  document.getElementById("stat-matched").textContent = summary.matched.toLocaleString();
+  document.getElementById("stat-breaks").textContent = summary.break_count.toLocaleString();
+  exportLink.href = "/api/runs/" + run.id + "/export.csv";
+  exportLink.classList.toggle("hidden", summary.break_count === 0);
+
+  filter.replaceChildren();
+  filter.appendChild(new Option("All breaks (" + summary.break_count + ")", "ALL"));
+  Object.keys(summary.by_type).sort().forEach((type) => {
+    filter.appendChild(new Option(TYPE_LABELS[type] + " (" + summary.by_type[type] + ")", type));
+  });
+
+  results.classList.remove("hidden");
+  setStatus("Run " + run.id + " finished.", false);
+  renderRows();
+}
+
+function tradeCell(trade, differences) {
+  const cell = document.createElement("td");
+  cell.className = "mono";
+  if (!trade) {
+    cell.textContent = "Not present";
+    cell.classList.add("absent");
+    return cell;
+  }
+  const lines = [
+    [["ticker", trade.ticker], ["quantity", trade.quantity.toLocaleString()], ["price", trade.price]],
+    [["trade_date", trade.trade_date], ["settle_date", trade.settle_date]]
+  ];
+  lines.forEach((fields) => {
+    const line = document.createElement("div");
+    line.className = "line";
+    fields.forEach(([name, value], index) => {
+      const span = document.createElement("span");
+      span.textContent = value;
+      if (differences[name]) span.className = "diff";
+      if (index > 0) line.appendChild(document.createTextNode(" "));
+      line.appendChild(span);
+    });
+    cell.appendChild(line);
+  });
+  return cell;
+}
+
+function textCell(text, className) {
+  const cell = document.createElement("td");
+  if (className) cell.className = className;
+  cell.textContent = text;
+  return cell;
+}
+
+function renderRows() {
+  if (!currentRun) return;
+  const selected = filter.value;
+  const rows = currentRun.breaks.filter((item) => selected === "ALL" || item.break_type === selected);
+  body.replaceChildren();
+
+  if (currentRun.summary.break_count === 0) {
+    empty.textContent = "No breaks. All " + currentRun.summary.matched.toLocaleString() + " trades matched.";
+  } else {
+    empty.textContent = "";
+  }
+  empty.classList.toggle("hidden", currentRun.summary.break_count !== 0);
+  tableWrap.classList.toggle("hidden", currentRun.summary.break_count === 0);
+
+  rows.forEach((item) => {
+    const row = document.createElement("tr");
+    row.appendChild(textCell(item.trade_id, "mono"));
+
+    const typeCell = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.dataset.type = item.break_type;
+    badge.textContent = TYPE_LABELS[item.break_type];
+    typeCell.appendChild(badge);
+    row.appendChild(typeCell);
+
+    row.appendChild(tradeCell(item.ledger, item.differences));
+    row.appendChild(tradeCell(item.custodian, item.differences));
+
+    const explanation = textCell(item.explanation);
+    const source = document.createElement("span");
+    source.className = "source";
+    source.textContent = item.explained_by === "llm" ? "Written by Claude" : "Template text";
+    explanation.appendChild(source);
+    row.appendChild(explanation);
+
+    row.appendChild(textCell(item.suggested_action));
+    body.appendChild(row);
+  });
+}
+</script>
+</body>
+</html>
